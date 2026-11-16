@@ -221,7 +221,14 @@ def inject_app_css() -> None:
         .tile {border-radius:20px;padding:14px 8px;text-align:center;min-height:86px;color:#1f201d;font-size:13px;font-weight:800;}
         .tile-icon {font-size:27px;display:block;margin-bottom:4px;}
         .tile-home {background:#f5d454;}.tile-dinner {background:#f4f1e8;}
-        .stAlert {border-radius:14px;}
+        [data-testid="stAlert"] {
+          border-radius:14px;
+          background:#3b2422 !important;
+          border:1px solid #8a514b !important;
+        }
+        [data-testid="stAlert"] * {
+          color:#ffe9e6 !important;
+        }
         @media (max-width:420px) {
           [data-testid="stAppViewContainer"] > .main .block-container {padding-left:.75rem;padding-right:.75rem;}
           .plan-card {padding-left:5px;padding-right:5px;min-height:154px;}
