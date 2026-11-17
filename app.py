@@ -1125,9 +1125,10 @@ def calendar_ui(data):
             due[a['deadline']]=due.get(a['deadline'],0)+1
     headers=st.columns(7,gap='small')
     for i,col in enumerate(headers):
-        tint='#c3424b' if i==6 else '#56708b'
-        col.markdown(f'<div style="text-align:center;color:{tint};font-size:12px">{WEEK[i]}</div>',unsafe_allow_html=True)
-    for week in calendar.Calendar(firstweekday=0).monthdayscalendar(view.year,view.month):
+        tint='#c3424b' if i==0 else ('#326a9b' if i==6 else '#56708b')
+        weekday_labels = ['일','월','화','수','목','금','토']
+        col.markdown(f'<div style="text-align:center;color:{tint};font-size:12px">{weekday_labels[i]}</div>',unsafe_allow_html=True)
+    for week in calendar.Calendar(firstweekday=6).monthdayscalendar(view.year,view.month):
         cols=st.columns(7,gap='small')
         for col,number in zip(cols,week):
             if not number:
@@ -1190,6 +1191,10 @@ h1,h2,h3{color:var(--ink);letter-spacing:-.035em;}
 [data-testid="stButton"] button{min-height:44px;border-radius:12px;}
 div.stButton>button[kind="primary"]{background:#326a9b;border-color:#326a9b;color:#fff;}
 [data-testid="stAlert"]{border-radius:14px;}
+.st-key-main_navigation{margin:10px 0 18px;}
+.st-key-main_navigation button{border-radius:15px!important;min-height:54px!important;border:1px solid #dce6ef;background:#f3f7fb;color:#425d76;font-weight:600;}
+.st-key-main_navigation button[kind="primary"]{background:#326a9b!important;color:#fff!important;border-color:#326a9b!important;box-shadow:0 3px 9px #326a9b24;}
+.st-key-main_navigation button:hover{border-color:#326a9b;background:#e8f0f8;}
 .summary{display:flex;justify-content:space-around;background:#f1f6fa;border-radius:18px;padding:16px 4px;}
 .summary div{text-align:center;display:flex;flex-direction:column;gap:4px;}
 .summary b{font-size:21px;color:#274c6d;}.summary span{font-size:11px;color:#53677b;}
@@ -1228,7 +1233,15 @@ def main():
     if back.button('시작',help='로고가 있는 시작 화면으로'):
         st.session_state.entered=False
         st.rerun()
-    navigation=st.radio('화면 선택',['캘린더','수행평가','시간표','기록·디자인'],horizontal=True,label_visibility='collapsed')
+    menu_items = ['캘린더','수행평가','시간표','기록·디자인']
+    navigation = st.session_state.get('navigation', '캘린더')
+    with st.container(key='main_navigation'):
+        menu_columns = st.columns(4, gap='small')
+        for column, label in zip(menu_columns, menu_items):
+            if column.button(label, key=f'nav_{label}', use_container_width=True,
+                             type='primary' if navigation == label else 'secondary'):
+                st.session_state.navigation = label
+                st.rerun()
     if navigation=='캘린더':
         summary_ui(data)
         calendar_ui(data)
