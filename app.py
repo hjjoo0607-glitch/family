@@ -146,13 +146,19 @@ def soften_text(text):
                 break
         outputs.append(output)
     result = " ".join(outputs)
+    if not changed:
+        # 변환하지 못한 경우의 요청된 말끝 효과입니다. 의미 순화는 아닙니다.
+        match = re.match(r"^(.*?)([.!?。！？~]*)$", text.strip(), re.DOTALL)
+        stem, punctuation = match.groups()
+        result = stem if stem.endswith("용") else stem + "용"
+        result += punctuation
+        if len(result) > MAX_CHARS:
+            return "kept", text.strip(), "500자 제한 때문에 ‘용’을 추가하지 않고 원문을 유지했어요."
+        return "converted", result, "자동 순화 규칙이 없어 말끝에 ‘용’만 붙였어요. 공격적인 뜻이 줄어든 것은 아니니 확인해 주세요."
     if len(result) > MAX_CHARS:
-        result = text.strip()
-        changed = False
-    return "converted", result, (
-        "알고 있는 표현만 다듬었어요. 처리하지 못한 부분은 그대로 두었으니 뜻을 확인해 주세요."
-        if changed else "이 표현은 규칙으로 안전하게 다듬기 어려워 원문을 유지했어요. 아래에서 수정한 뒤 보내 주세요."
-    )
+        return "kept", text.strip(), "변환 결과가 500자를 넘어 원문을 유지했어요."
+    return "converted", result, "아는 표현만 다듬었어요. 나머지 부분의 뜻도 확인해 주세요."
+
 
 
 def combine_manual(situation, feeling, request):
@@ -423,27 +429,14 @@ def main_screen():
     # 큰 상자 버튼으로 이동하고, 선택한 화면은 세션에 유지합니다.
     if "current_page" not in S:
         S.current_page = "마음 쓰기 ✍️"
-    menu_columns = st.columns(3)
-    for col, label in zip(menu_columns, ["마음 쓰기 ✍️", "가족 편지함 💌", "우리 가족"]):
+    if S.current_page not in ("마음 쓰기 ✍️", "가족 편지함 💌"):
+        S.current_page = "마음 쓰기 ✍️"
+    menu_columns = st.columns(2)
+    for col, label in zip(menu_columns, ["마음 쓰기 ✍️", "가족 편지함 💌"]):
         col.button(label, key="nav_" + label, use_container_width=True,
                    type="primary" if S.current_page == label else "secondary",
                    on_click=lambda target=label:S.update(current_page=target))
     page = S.current_page
-
-    if page == "우리 가족":
-        st.subheader("우리 가족")
-        st.caption("우리 가족 여섯 명이에요. 마음 쓰기에서 보내는 가족과 받는 가족을 선택해 주세요.")
-        for member in S.members:
-            st.markdown(f'<div class="family-card">{html.escape(member["name"])}</div>', unsafe_allow_html=True)
-        with st.expander("🧹 전체 기록 초기화"):
-            st.warning("보낸 편지, 반응, 작성 중인 원문을 모두 지워요. 가족 여섯 명은 그대로 유지돼요. 되돌릴 수 없어요.")
-            if not S.reset_confirm:
-                st.button("전체 기록 초기화", on_click=lambda:S.update(reset_confirm=True), use_container_width=True)
-            else:
-                st.warning("정말 모든 편지를 지울까요?")
-                yes, no = st.columns(2)
-                yes.button("모두 지우기", on_click=reset_everything, use_container_width=True)
-                no.button("취소", on_click=lambda:S.update(reset_confirm=False), use_container_width=True)
 
     if page == "마음 쓰기 ✍️":
         st.caption(AI_NOTICE)
@@ -533,6 +526,18 @@ def main_screen():
                     yes, no = st.columns(2)
                     yes.button("네, 삭제할게요", key="delete_yes_"+mid, on_click=delete_message, args=(mid,), use_container_width=True)
                     no.button("취소", key="delete_no_"+mid, on_click=lambda:S.update(delete_id=None), use_container_width=True)
+
+
+    if page == "가족 편지함 💌":
+        with st.expander("🧹 전체 기록 초기화"):
+            st.warning("보낸 편지, 반응, 작성 중인 원문을 모두 지워요. 가족 여섯 명은 그대로 유지돼요. 되돌릴 수 없어요.")
+            if not S.reset_confirm:
+                st.button("전체 기록 초기화", on_click=lambda:S.update(reset_confirm=True), use_container_width=True)
+            else:
+                st.warning("정말 모든 편지를 지울까요?")
+                yes, no = st.columns(2)
+                yes.button("모두 지우기", on_click=reset_everything, use_container_width=True)
+                no.button("취소", on_click=lambda:S.update(reset_confirm=False), use_container_width=True)
 
 
 main_screen()
