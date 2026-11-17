@@ -1,6 +1,6 @@
 """오늘 우리 집 — 가족 계획 공유용 Streamlit 앱.
 
-로그인 비밀번호 해시는 Streamlit Secrets에만 두고, Supabase service-role 키로
+가족별 입장 코드는 Streamlit Secrets에만 두고, Supabase service-role 키로
 DB에 접근합니다. 사용자별 데이터 소유권 검증은 저장 함수에서 다시 수행합니다.
 """
 from __future__ import annotations
@@ -23,7 +23,6 @@ DINNER_OPTIONS = ["집에서 먹어요", "밖에서 먹어요", "아직 몰라�
 DEFAULT_ARRIVAL = "미정"
 DEFAULT_DINNER = "아직 몰라요"
 KST = ZoneInfo("Asia/Seoul")
-PBKDF2_ITERATIONS = 310_000
 TABLE_NAME = "family_plans"
 
 # 첨부한 원본 PNG를 그대로 내장합니다. 비율/표시를 손대지 않습니다.
@@ -74,13 +73,13 @@ show_splash_once()
 
 
 def get_secret_config():
-    """Secrets 누락을 항목별로 안내하고, 유효하면 연결 설정을 반환합니다."""
+    """Supabase 및 가족별 6자리 입장 코드 설정을 확인합니다."""
     problems = []
     try:
         db = st.secrets.get("supabase", {})
-        users = st.secrets.get("users", {})
+        access_codes = st.secrets.get("access_codes", {})
     except Exception:
-        db, users = {}, {}
+        db, access_codes = {}, {}
         problems.append("Secrets 내용이 TOML 형식인지 확인해 주세요.")
 
     url = str(db.get("url", "")).strip() if hasattr(db, "get") else ""
@@ -90,82 +89,61 @@ def get_secret_config():
     if not service_key or "YOUR_SERVICE_ROLE_KEY" in service_key:
         problems.append("Supabase 서비스 역할 키 (supabase.service_role_key)")
 
-    valid_users = {}
+    valid_codes = {}
     for name in FAMILY:
         try:
-            entry = users[name]
-            salt = str(entry["salt"]).strip()
-            password_hash = str(entry["password_hash"]).strip()
-            salt_bytes = bytes.fromhex(salt)
-            hash_bytes = bytes.fromhex(password_hash)
-            if len(salt_bytes) != 16 or len(hash_bytes) != 32:
-                raise ValueError("wrong length")
-            valid_users[name] = entry
+            code = str(access_codes[name]).strip()
+            if not re.fullmatch(r"\d{6}", code):
+                raise ValueError("입장 코드는 숫자 6자리여야 합니다.")
+            valid_codes[name] = code
         except Exception:
-            problems.append(f"{name}: salt와 password_hash 등록 또는 형식 확인")
+            problems.append(f"{name}: 6자리 입장 코드 (access_codes.{name}) 등록 또는 형식 확인")
 
     if problems:
         st.markdown('<div class="brand">🏠 오늘 우리 집</div>', unsafe_allow_html=True)
         st.markdown('<div class="section-title">앱 설정을 마무리해 주세요</div>', unsafe_allow_html=True)
-        st.info("앱 파일은 실행됐지만, 가족 데이터와 계정을 연결하는 설정이 아직 준비되지 않았어요.")
+        st.info("앱 파일은 실행됐지만, 가족 데이터와 입장 코드를 연결하는 설정이 아직 준비되지 않았어요.")
         st.markdown("**아래 항목을 Streamlit Cloud의 앱 설정 → Secrets에 등록해 주세요.**")
         for problem in problems:
             st.markdown(f"- {safe_text(problem)}")
-        st.caption("YOUR_... 같은 예시 문구는 실제 값이 아니므로 그대로 사용하면 연결되지 않습니다. 비밀번호와 서비스 키는 GitHub에 올리거나 다른 사람과 공유하지 마세요.")
+        st.caption("입장 코드와 서비스 역할 키는 GitHub 코드에 넣지 말고 Secrets에만 보관해 주세요.")
         with st.expander("Secrets 형식 보기"):
             st.code(
                 '[supabase]\nurl = "https://실제-프로젝트-ID.supabase.co"\nservice_role_key = "실제-서비스-역할-키"\n\n'
-                + "\n\n".join(
-                    f'[users."{name}"]\nsalt = "각 계정의_16바이트_랜덤_솔트_32자리_16진수"\npassword_hash = "각 계정의_PBKDF2_SHA256_해시_64자리_16진수"'
-                    for name in FAMILY
-                ),
+                '[access_codes]\n'
+                '"아빠" = "가족별-6자리-코드"\n"엄마" = "가족별-6자리-코드"\n"오빠" = "가족별-6자리-코드"\n'
+                '"민영" = "가족별-6자리-코드"\n"지영" = "가족별-6자리-코드"\n"주영" = "가족별-6자리-코드"',
                 language="toml",
             )
-        st.caption("각 가족 계정은 서로 다른 salt와 비밀번호 해시가 필요합니다. Secrets 저장 후 앱이 다시 시작되면 로그인 화면으로 이동합니다.")
+        st.caption("입장 코드는 가족 구성원별로 정해 둔 6자리 코드예요. 코드를 아는 사람은 해당 이름으로 입장할 수 있으므로 가족끼리만 공유해 주세요. Secrets 저장 후 앱이 다시 시작됩니다.")
         st.stop()
 
-    return url, service_key, valid_users
-
-
-
-def verify_password(password: str, salt_hex: str, expected_hex: str) -> bool:
-    """PBKDF2-HMAC-SHA256 해시를 상수 시간 비교합니다."""
-    try:
-        salt = bytes.fromhex(salt_hex)
-        expected = bytes.fromhex(expected_hex)
-        actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PBKDF2_ITERATIONS)
-        return hmac.compare_digest(actual, expected)
-    except (ValueError, TypeError, UnicodeError):
-        return False
-
+    return url, service_key, valid_codes
 
 def local_today() -> date:
     """한국 시간대의 오늘 날짜를 반환합니다."""
     return datetime.now(KST).date()
 
 
-def show_login(users) -> None:
-    """정해진 가족 구성원만 이름과 개인 비밀번호로 로그인합니다."""
+def show_login(access_codes) -> None:
+    """정해진 가족 구성원만 이름과 개인 입장 코드로 로그인합니다."""
     st.markdown('<div class="brand">🏠 오늘 우리 집</div><div class="tagline">우리 가족, 오늘은 어디에?</div>', unsafe_allow_html=True)
     st.markdown('<div class="section-title">반가워요, 누구세요?</div>', unsafe_allow_html=True)
     with st.form("login_form", clear_on_submit=False):
         selected = st.selectbox("이름", FAMILY, key="login_name")
-        password = st.text_input("개인 비밀번호", type="password", autocomplete="current-password")
-        submitted = st.form_submit_button("로그인", use_container_width=True)
+        code = st.text_input("입장 코드 · 숫자 6자리", type="password", max_chars=6, autocomplete="off")
+        submitted = st.form_submit_button("우리 집 들어가기", use_container_width=True)
     if submitted:
-        try:
-            entry = users[selected]
-            ok = verify_password(password, str(entry["salt"]), str(entry["password_hash"]))
-        except Exception:
-            ok = False
+        supplied = code.strip()
+        expected = access_codes.get(selected, "")
+        ok = len(supplied) == 6 and supplied.isdigit() and hmac.compare_digest(supplied, expected)
         if ok:
             st.session_state["current_user"] = selected
             st.session_state["selected_date"] = local_today()
             st.session_state["page"] = "홈"
             st.rerun()
-        st.error("이름 또는 비밀번호를 확인해 주세요.")
+        st.error("이름 또는 입장 코드를 확인해 주세요.")
     st.caption("가족 구성원 전용 공간이에요. 새 계정 가입은 제공하지 않습니다.")
-
 
 
 def make_db_client(url: str, key: str):
@@ -388,9 +366,9 @@ def render_nav() -> None:
 def main() -> None:
     """앱 진입점: 설정, 로그인, DB 조회, 각 화면을 순서대로 구성합니다."""
     inject_app_css()
-    url, service_key, users = get_secret_config()
+    url, service_key, access_codes = get_secret_config()
     if not st.session_state.get("current_user"):
-        show_login(users)
+        show_login(access_codes)
         return
     current_user = st.session_state["current_user"]
     if current_user not in FAMILY:
