@@ -81,7 +81,9 @@ def get_config():
             raise ValueError("필수 설정값이 비어 있습니다.")
         return url, key, codes, title
     except Exception as exc:
-        st.error("앱 설정이 아직 완료되지 않았어요. 아래 내용을 `st.secrets`에 등록해 주세요.")
+        # 설정이 없더라도 사용자가 브랜드 화면을 볼 수 있도록 로고/앱명을 먼저 보여줍니다.
+        hero("오늘 우리 집", "가족 코드로 입장할 수 있도록 앱 설정을 마무리해 주세요")
+        st.error("앱 설정이 아직 완료되지 않았어요. 아래 값을 Streamlit의 Secrets에 등록해 주세요.")
         st.code('''[supabase]
 url = "https://YOUR_PROJECT.supabase.co"
 service_role_key = "YOUR_SERVICE_ROLE_KEY"
