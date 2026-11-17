@@ -17,6 +17,15 @@ import streamlit as st
 st.set_page_config(page_title="우리 사이, 번역기 💌", page_icon="💌", layout="centered")
 MAX_CHARS = 500
 EMOJIS = ["🐱", "🐶", "🐰", "🐻", "🦊", "🐼", "🐸", "🐧", "🐣", "🍓", "🍑", "🍊", "🍎", "🥝", "🍇"]
+# 가족을 따로 등록하지 않고 아래 여섯 명을 항상 사용합니다.
+FIXED_FAMILY = [
+    {"id": "dad", "name": "아빠", "emoji": "🐻"},
+    {"id": "mom", "name": "엄마", "emoji": "🌷"},
+    {"id": "brother", "name": "오빠", "emoji": "🐶"},
+    {"id": "sister1", "name": "언니 1", "emoji": "🐰"},
+    {"id": "sister2", "name": "언니 2", "emoji": "🐱"},
+    {"id": "jooyoung", "name": "주영", "emoji": "🐣"},
+]
 ALL = "__all__"
 REACTIONS = [("read", "👀 읽었어요"), ("understand", "💛 이해해요"), ("talk", "💬 이야기해요")]
 AI_NOTICE = "AI가 아닌 규칙 기반 표현 도우미입니다. 보내기 전에 뜻이 맞는지 확인해 주세요."
@@ -136,7 +145,7 @@ S = st.session_state
 
 def init_state():
     defaults = {
-        "members": [], "messages": [], "original": "", "preview": "", "author": None,
+        "members": [dict(m) for m in FIXED_FAMILY], "messages": [], "original": "", "preview": "", "author": None,
         "recipient": ALL, "draft_source": None, "draft_status": "idle", "draft_note": "",
         "draft_token": str(uuid.uuid4()), "sent_tokens": set(), "reviewed": False,
         "situation": "", "feeling": "", "request": "", "flash": "", "notice": "",
@@ -310,7 +319,7 @@ def reset_everything():
     if S.get("reset_confirm"):
         S.clear()
         init_state()
-        S.notice = "가족 정보와 모든 기록을 초기화했어요."
+        S.notice = "편지와 작성 내용을 초기화했어요. 가족 여섯 명은 그대로예요."
 
 
 CSS = """
@@ -351,19 +360,10 @@ st.markdown('<div class="hero"><div class="envelope" aria-hidden="true">💌</di
 # 시작 버튼을 누르기 전에는 st.stop()으로 아래 가족 설정·작성·편지함을 그리지 않습니다.
 # 실제 작업이 없는 가짜 로딩이나 기다림, 외부 이미지, 애니메이션은 넣지 않습니다.
 if not S.welcome_done:
-    st.markdown('''<div style="text-align:center;padding:1.8rem 1rem;
-        background:#EDF3E6;border:1px solid #CBD8BE;border-radius:24px;margin:1.2rem 0;">
-        <div style="font-size:5rem;line-height:1.4;" aria-hidden="true">💌</div>
-        <h2>우리 가족의 마음을 담는 작은 우편함</h2>
-        <p style="font-size:1.1rem;line-height:1.8;">솔직한 말도 조금 더 다정하게.<br>
-        하고 싶은 마음을 편지에 담아 나눠 보세요. 🐣</p>
-        <p>🌷 가족 등록 &nbsp; → &nbsp; ✍️ 마음 쓰기 &nbsp; → &nbsp; 💌 편지 나누기</p>
-        </div>''', unsafe_allow_html=True)
-    st.button("우리 가족 마음 나누기 💌", key="welcome_start", type="primary",
+    # 첫 화면에는 앱 제목·소개와 시작 버튼만 남깁니다.
+    # 필요한 사용·개인정보 안내는 시작 후 본 화면에서 표시합니다.
+    st.button("시작하기 💌", key="welcome_start", type="primary",
               use_container_width=True, on_click=lambda:S.update(welcome_done=True))
-    st.caption(AI_NOTICE)
-    st.caption("🌱 " + SESSION_NOTICE)
-    st.caption(SHARED_NOTICE)
     st.stop()
 
 st.info(AI_NOTICE)
@@ -376,34 +376,16 @@ if S.notice:
     st.info(S.notice)
     S.notice = ""
 
-settings_tab, compose_tab, mailbox_tab = st.tabs(["가족 설정 👨‍👩‍👧‍👦", "마음 쓰기 ✍️", "가족 편지함 💌"])
+settings_tab, compose_tab, mailbox_tab = st.tabs(["우리 가족 👨‍👩‍👧‍👦", "마음 쓰기 ✍️", "가족 편지함 💌"])
 
 with settings_tab:
     st.subheader("👨‍👩‍👧‍👦 우리 가족 소개")
-    st.caption("별명과 이모지만 등록해요. 실명·전화번호·이메일은 적지 마세요. 별명은 로그인이나 본인 인증이 아니에요.")
-    with st.form("add_family", clear_on_submit=True):
-        family_name = st.text_input("가족 별명", max_chars=16, placeholder="예: 딸기, 곰돌이")
-        family_emoji = st.selectbox("프로필 이모지", EMOJIS)
-        add_family = st.form_submit_button("가족 등록하기 🌷", use_container_width=True)
-    if add_family:
-        name = normalize(family_name)
-        if not name:
-            st.error("공백이 아닌 별명을 입력해 주세요.")
-        elif any(nickname_key(m["name"]) == nickname_key(name) for m in S.members):
-            st.error("이미 등록된 별명이에요. 다른 별명을 골라 주세요.")
-        else:
-            S.members.append({"id": str(uuid.uuid4()), "name": name, "emoji": family_emoji})
-            S.flash = "가족을 등록했어요 🌷 마음 쓰기 탭에서 편지를 써 보세요."
-            st.rerun()
-    if S.members:
-        st.markdown("#### 등록된 가족")
-        for member in S.members:
-            st.markdown(f'<div class="family-card">{html.escape(member["emoji"])} {html.escape(member["name"])}</div>',unsafe_allow_html=True)
-    else:
-        st.info("아직 등록된 가족이 없어요. 먼저 별명을 하나 이상 등록해 주세요. 🐣")
+    st.caption("우리 가족 여섯 명이에요. 마음 쓰기에서 보내는 가족과 받는 가족을 선택해 주세요.")
+    for member in S.members:
+        st.markdown(f'<div class="family-card">{html.escape(member["emoji"])} {html.escape(member["name"])}</div>', unsafe_allow_html=True)
     with st.expander("🧹 전체 기록 초기화"):
-        st.warning("등록한 가족, 보낸 편지, 반응, 작성 중인 원문까지 모두 지워져요. 되돌릴 수 없어요.")
-        st.checkbox("모든 가족 정보와 편지를 삭제한다는 것을 확인했어요.", key="reset_confirm")
+        st.warning("보낸 편지, 반응, 작성 중인 원문을 모두 지워요. 가족 여섯 명은 그대로 유지돼요. 되돌릴 수 없어요.")
+        st.checkbox("모든 편지와 작성 중인 내용을 삭제한다는 것을 확인했어요.", key="reset_confirm")
         st.button("전체 기록 초기화", disabled=not S.reset_confirm, on_click=reset_everything, use_container_width=True)
 
 with compose_tab:
@@ -411,7 +393,7 @@ with compose_tab:
     st.caption("① 원문 입력 → ② 규칙 기반 변환 또는 직접 작성 → ③ 확인 후 전송")
     st.caption("공동 기기용이에요. 작성자·받는 사람 선택은 표시용이며, 받는 사람이 아닌 가족도 편지함을 볼 수 있어요.")
     if not S.members:
-        st.info("먼저 가족 설정 탭에서 별명과 이모지를 등록해 주세요.")
+        st.info("가족 목록을 불러오지 못했어요. 전체 기록 초기화를 사용해 주세요.")
     else:
         member_map = {m["id"]: m for m in S.members}
         ids = list(member_map)
@@ -540,7 +522,7 @@ with st.expander("📚 수행평가 설명 · 어떻게 동작하나요?"):
 
 **3. 세션 저장**
 
-`st.session_state.members`는 가족 목록, `st.session_state.messages`는 최종 편지와 반응을 담아요.
+`st.session_state.members`는 고정된 여섯 명의 가족 목록, `st.session_state.messages`는 최종 편지와 반응을 담아요.
 원문은 작성용 임시 상태에만 있으며, 편지 기록에는 넣지 않아요.
 전송하면 원문·미리 보기·직접 작성 틀을 비워요. 파일이나 DB에 저장하지 않아요.
 반응은 가족 ID를 집합(set)으로 관리하므로 같은 가족의 같은 반응이 중복되지 않아요.
@@ -554,7 +536,7 @@ with st.expander("📚 수행평가 설명 · 어떻게 동작하나요?"):
 
 **5. 공동 기기와 개인정보**
 
-작성자와 반응할 가족 선택은 본인 인증이 아니에요. 받는 사람 선택도 비밀 전송 기능이 아니에요.
+아빠·엄마·오빠·언니 1·언니 2·주영은 미리 등록되어 있어요. 작성자와 반응할 가족 선택은 본인 인증이 아니에요. 받는 사람 선택도 비밀 전송 기능이 아니에요.
 같은 기기를 보는 가족은 작성 중인 원문을 볼 수 있으며, 탭은 보안 경계가 아니에요.
 최종 편지함에는 전송한 문장만 보이지만, 별도의 가족별 비밀 공간은 없어요.
 외부 AI·로그인·DB·이미지·폰트 서비스를 연결하지 않아요.
