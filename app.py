@@ -141,6 +141,7 @@ def init_state():
         "draft_token": str(uuid.uuid4()), "sent_tokens": set(), "reviewed": False,
         "situation": "", "feeling": "", "request": "", "flash": "", "notice": "",
         "delete_id": None, "reset_confirm": False, "processing": False,
+        "welcome_done": False,
     }
     for key, value in defaults.items():
         if key not in S:
@@ -346,6 +347,25 @@ st.markdown(CSS, unsafe_allow_html=True)
 st.markdown('<div class="hero"><div class="envelope" aria-hidden="true">💌</div>'
             '<h1>우리 사이, 번역기 💌</h1><p>솔직한 마음은 그대로, 표현은 다정하게</p></div>',
             unsafe_allow_html=True)
+# 환영 화면은 현재 세션에서 한 번만 보여 줍니다.
+# 시작 버튼을 누르기 전에는 st.stop()으로 아래 가족 설정·작성·편지함을 그리지 않습니다.
+# 실제 작업이 없는 가짜 로딩이나 기다림, 외부 이미지, 애니메이션은 넣지 않습니다.
+if not S.welcome_done:
+    st.markdown('''<div style="text-align:center;padding:1.8rem 1rem;
+        background:#EDF3E6;border:1px solid #CBD8BE;border-radius:24px;margin:1.2rem 0;">
+        <div style="font-size:5rem;line-height:1.4;" aria-hidden="true">💌</div>
+        <h2>우리 가족의 마음을 담는 작은 우편함</h2>
+        <p style="font-size:1.1rem;line-height:1.8;">솔직한 말도 조금 더 다정하게.<br>
+        하고 싶은 마음을 편지에 담아 나눠 보세요. 🐣</p>
+        <p>🌷 가족 등록 &nbsp; → &nbsp; ✍️ 마음 쓰기 &nbsp; → &nbsp; 💌 편지 나누기</p>
+        </div>''', unsafe_allow_html=True)
+    st.button("우리 가족 마음 나누기 💌", key="welcome_start", type="primary",
+              use_container_width=True, on_click=lambda:S.update(welcome_done=True))
+    st.caption(AI_NOTICE)
+    st.caption("🌱 " + SESSION_NOTICE)
+    st.caption(SHARED_NOTICE)
+    st.stop()
+
 st.info(AI_NOTICE)
 st.caption("🌱 " + SESSION_NOTICE)
 st.warning(SHARED_NOTICE)
