@@ -356,9 +356,10 @@ CSS = """
 [data-testid="stRadio"] [role="radiogroup"]>label{flex:1;min-width:85px;padding:.65rem .35rem;background:#EDF3E6;border-radius:14px;margin:0;justify-content:center;}
 h1,h2,h3,p,label,[data-testid="stMarkdownContainer"]{color:#49372F;}
 [data-testid="stCaptionContainer"]{color:#69564B;}
-.hero{text-align:center;background:#FBE8EA;border-radius:26px;padding:1.2rem .5rem;margin-bottom:1rem;}
-.hero h1{font-size:clamp(1.6rem,5vw,2.3rem);margin:.3rem 0;}
-.hero p{margin:.5rem 0;}.envelope{font-size:2.6rem;}
+.hero{text-align:center;background:#FBE8EA;border-radius:20px;padding:.45rem;margin-bottom:.4rem;}
+[data-testid="stVerticalBlock"]{gap:.65rem;}
+.hero h1{font-size:clamp(1.35rem,4.8vw,1.8rem);margin:.15rem 0;}
+.hero p{margin:.5rem 0;}.envelope{font-size:1.6rem;}
 .stButton>button,.stFormSubmitButton>button{border-radius:16px;min-height:48px;font-size:1rem;
  background:#FBE3E7;color:#49372F;border:1px solid #B9968D;white-space:normal;}
 .stButton>button:hover,.stFormSubmitButton>button:hover{border-color:#78544C;color:#49372F;}
@@ -387,6 +388,7 @@ if not S.welcome_done:
     .block-container{margin:auto;max-width:480px;padding:1.5rem 1rem;}
     .hero{background:transparent;padding:1rem 0;}
     .hero .envelope{font-size:5rem;}
+    .hero h1{font-size:clamp(1.6rem,6vw,2.2rem);}
     </style>""", unsafe_allow_html=True)
 st.markdown('<div class="hero"><div class="envelope" aria-hidden="true">💌</div>' 
             '<h1>우리 사이, 번역기 💌</h1><p>솔직한 마음은 그대로, 표현은 다정하게</p></div>',
@@ -418,9 +420,15 @@ def main_screen():
         st.info(S.notice)
         S.notice = ""
 
-    # 선택 화면을 세션에 보관해 버튼을 눌러도 다른 화면으로 돌아가지 않습니다.
-    page = st.radio("화면 선택", ["마음 쓰기 ✍️", "가족 편지함 💌", "우리 가족"],
-                    key="current_page", horizontal=True, label_visibility="collapsed")
+    # 큰 상자 버튼으로 이동하고, 선택한 화면은 세션에 유지합니다.
+    if "current_page" not in S:
+        S.current_page = "마음 쓰기 ✍️"
+    menu_columns = st.columns(3)
+    for col, label in zip(menu_columns, ["마음 쓰기 ✍️", "가족 편지함 💌", "우리 가족"]):
+        col.button(label, key="nav_" + label, use_container_width=True,
+                   type="primary" if S.current_page == label else "secondary",
+                   on_click=lambda target=label:S.update(current_page=target))
+    page = S.current_page
 
     if page == "우리 가족":
         st.subheader("우리 가족")
@@ -429,14 +437,16 @@ def main_screen():
             st.markdown(f'<div class="family-card">{html.escape(member["name"])}</div>', unsafe_allow_html=True)
         with st.expander("🧹 전체 기록 초기화"):
             st.warning("보낸 편지, 반응, 작성 중인 원문을 모두 지워요. 가족 여섯 명은 그대로 유지돼요. 되돌릴 수 없어요.")
-            st.checkbox("모든 편지와 작성 중인 내용을 삭제한다는 것을 확인했어요.", key="reset_confirm")
-            st.button("전체 기록 초기화", disabled=not S.reset_confirm, on_click=reset_everything, use_container_width=True)
+            if not S.reset_confirm:
+                st.button("전체 기록 초기화", on_click=lambda:S.update(reset_confirm=True), use_container_width=True)
+            else:
+                st.warning("정말 모든 편지를 지울까요?")
+                yes, no = st.columns(2)
+                yes.button("모두 지우기", on_click=reset_everything, use_container_width=True)
+                no.button("취소", on_click=lambda:S.update(reset_confirm=False), use_container_width=True)
 
     if page == "마음 쓰기 ✍️":
-        st.subheader("✍️ 내 마음을 편지로")
         st.caption(AI_NOTICE)
-        st.caption("① 입력 → ② 다듬기 → ③ 확인 후 전송")
-        st.caption("공동 기기용이에요. 작성자·받는 사람 선택은 표시용이며, 받는 사람이 아닌 가족도 편지함을 볼 수 있어요.")
         if not S.members:
             st.info("가족 목록을 불러오지 못했어요. 전체 기록 초기화를 사용해 주세요.")
         else:
@@ -453,8 +463,7 @@ def main_screen():
             left, right = st.columns(2)
             left.selectbox("보내는 가족", ids, format_func=member_label, key="author", on_change=writer_changed)
             right.selectbox("받는 가족", [ALL] + ids, format_func=member_label, key="recipient", on_change=recipient_changed)
-            st.markdown('<div class="step">① 하고 싶은 말을 적어 주세요</div>',unsafe_allow_html=True)
-            st.text_area("원문 · 아직 전송되지 않았어요", key="original", max_chars=MAX_CHARS, height=140,
+            st.text_area("원문 · 아직 전송되지 않았어요", key="original", max_chars=MAX_CHARS, height=105,
                          on_change=source_changed, placeholder="예: TV 소리 좀 줄여.")
             st.caption(f"원문 {len(S.original)} / {MAX_CHARS}자")
             st.button("다정하게 바꾸기 🪄", on_click=convert,
@@ -474,10 +483,8 @@ def main_screen():
 
             # 미리 보기가 비어도 직접 수정 칸을 유지하여 지웠다가 다시 쓸 수 있습니다.
             if S.draft_status in ("converted", "kept", "manual") and S.draft_source is not None:
-                st.markdown('<div class="step">② 원문과 비교하고, 최종 문장을 고쳐 주세요</div>',unsafe_allow_html=True)
-                st.caption("위의 원문과 아래 문장을 비교해 주세요. 앱이 내 뜻을 판단해 주지는 않아요.")
                 st.text_area("가족에게 보여 줄 최종 문장 · 직접 수정 가능", key="preview", max_chars=MAX_CHARS,
-                             height=140, on_change=preview_changed)
+                             height=105, on_change=preview_changed)
                 st.caption(f"최종 문장 {len(S.preview)} / {MAX_CHARS}자")
                 current = S.draft_source == S.original
                 dangerous = is_danger(S.preview) or is_danger(S.original)
@@ -486,12 +493,10 @@ def main_screen():
                 if dangerous:
                     st.error(SAFETY_NOTICE)
                 st.caption("뜻이 맞는지 확인하고, 아래 보내기 버튼을 눌러 주세요.")
-                st.markdown('<div class="step">③ 확인한 문장만 보내요</div>',unsafe_allow_html=True)
                 st.button("이 마음 보내기 💌", key="send_final", on_click=send_message, use_container_width=True,
                           disabled=S.processing or not current or dangerous or not S.preview.strip())
             st.button("작성 중인 원문·미리 보기 지우기", on_click=clear_draft, use_container_width=True,
                       disabled=not bool(S.original or S.preview or S.situation or S.feeling or S.request))
-            st.caption("전송 후 원문과 미리 보기는 초기화돼요. 아래 탭에서 ‘가족 편지함 💌’을 눌러 보여 주세요.")
 
     if page == "가족 편지함 💌":
         st.subheader("📬 가족에게 도착한 마음")
