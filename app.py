@@ -74,27 +74,57 @@ show_splash_once()
 
 
 def get_secret_config():
-    """필수 Secrets를 읽고 누락된 항목을 안전하게 알립니다."""
+    """Secrets 누락을 항목별로 안내하고, 유효하면 연결 설정을 반환합니다."""
+    problems = []
     try:
-        db = st.secrets["supabase"]
-        users = st.secrets["users"]
-        url = str(db["url"]).strip()
-        service_key = str(db["service_role_key"]).strip()
-        if not url or not service_key:
-            raise KeyError("empty Supabase setting")
-        if not all(name in users for name in FAMILY):
-            raise KeyError("all six users are required")
-        return url, service_key, users
+        db = st.secrets.get("supabase", {})
+        users = st.secrets.get("users", {})
     except Exception:
-        st.error("앱 설정이 아직 완료되지 않았어요. Streamlit Secrets에 Supabase 접속 정보와 가족 6명의 비밀번호 해시를 등록해 주세요.")
-        with st.expander("필요한 설정 형식 보기"):
+        db, users = {}, {}
+        problems.append("Secrets 내용이 TOML 형식인지 확인해 주세요.")
+
+    url = str(db.get("url", "")).strip() if hasattr(db, "get") else ""
+    service_key = str(db.get("service_role_key", "")).strip() if hasattr(db, "get") else ""
+    if not url or "YOUR_PROJECT" in url or not url.startswith("https://"):
+        problems.append("Supabase 프로젝트 URL (supabase.url)")
+    if not service_key or "YOUR_SERVICE_ROLE_KEY" in service_key:
+        problems.append("Supabase 서비스 역할 키 (supabase.service_role_key)")
+
+    valid_users = {}
+    for name in FAMILY:
+        try:
+            entry = users[name]
+            salt = str(entry["salt"]).strip()
+            password_hash = str(entry["password_hash"]).strip()
+            salt_bytes = bytes.fromhex(salt)
+            hash_bytes = bytes.fromhex(password_hash)
+            if len(salt_bytes) != 16 or len(hash_bytes) != 32:
+                raise ValueError("wrong length")
+            valid_users[name] = entry
+        except Exception:
+            problems.append(f"{name}: salt와 password_hash 등록 또는 형식 확인")
+
+    if problems:
+        st.markdown('<div class="brand">🏠 오늘 우리 집</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">앱 설정을 마무리해 주세요</div>', unsafe_allow_html=True)
+        st.info("앱 파일은 실행됐지만, 가족 데이터와 계정을 연결하는 설정이 아직 준비되지 않았어요.")
+        st.markdown("**아래 항목을 Streamlit Cloud의 앱 설정 → Secrets에 등록해 주세요.**")
+        for problem in problems:
+            st.markdown(f"- {safe_text(problem)}")
+        st.caption("YOUR_... 같은 예시 문구는 실제 값이 아니므로 그대로 사용하면 연결되지 않습니다. 비밀번호와 서비스 키는 GitHub에 올리거나 다른 사람과 공유하지 마세요.")
+        with st.expander("Secrets 형식 보기"):
             st.code(
-                '[supabase]\nurl = "https://YOUR_PROJECT.supabase.co"\nservice_role_key = "YOUR_SERVICE_ROLE_KEY"\n\n'
-                '[users."아빠"]\nsalt = "생성한_16바이트_랜덤_솔트의_32자리_16진수"\npassword_hash = "PBKDF2_SHA256_해시_64자리_16진수"\n'
-                '# 엄마, 오빠, 민영, 지영, 주영도 같은 구조로 추가',
+                '[supabase]\nurl = "https://실제-프로젝트-ID.supabase.co"\nservice_role_key = "실제-서비스-역할-키"\n\n'
+                + "\n\n".join(
+                    f'[users."{name}"]\nsalt = "각 계정의_16바이트_랜덤_솔트_32자리_16진수"\npassword_hash = "각 계정의_PBKDF2_SHA256_해시_64자리_16진수"'
+                    for name in FAMILY
+                ),
                 language="toml",
             )
+        st.caption("각 가족 계정은 서로 다른 salt와 비밀번호 해시가 필요합니다. Secrets 저장 후 앱이 다시 시작되면 로그인 화면으로 이동합니다.")
         st.stop()
+
+    return url, service_key, valid_users
 
 
 
