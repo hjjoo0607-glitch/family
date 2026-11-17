@@ -130,7 +130,29 @@ def soften_text(text):
     ]
     if not HARSH_RE.search(canonical) and any(re.fullmatch(p, canonical) for p in polite):
         return "kept", text.strip(), "이미 부드러운 표현이라 그대로 두었어요. 그래도 뜻은 직접 확인해 주세요."
-    return "unsupported", "", UNSUPPORTED
+    # 문맥을 추측하지 않고 문장별로 알려진 규칙만 적용합니다.
+    # 처리하지 못한 부분은 그대로 유지했다고 명확히 알립니다.
+    pieces = re.split(r"(?<=[.!?。！？])\s+|\n+", text.strip())
+    changed = False
+    outputs = []
+    for piece in pieces:
+        core = normalize(piece).rstrip(".!?。！？~ ")
+        candidate = PREFIX_RE.sub("", core)
+        output = piece
+        for _label, pattern, result in COMPILED_RULES:
+            if pattern.fullmatch(candidate):
+                output = result
+                changed = True
+                break
+        outputs.append(output)
+    result = " ".join(outputs)
+    if len(result) > MAX_CHARS:
+        result = text.strip()
+        changed = False
+    return "converted", result, (
+        "알고 있는 표현만 다듬었어요. 처리하지 못한 부분은 그대로 두었으니 뜻을 확인해 주세요."
+        if changed else "이 표현은 규칙으로 안전하게 다듬기 어려워 원문을 유지했어요. 아래에서 수정한 뒤 보내 주세요."
+    )
 
 
 def combine_manual(situation, feeling, request):
@@ -172,7 +194,7 @@ def invalidate_preview():
 def source_changed():
     invalidate_preview()
     S.situation = S.feeling = S.request = ""
-    S.notice = "원문이 바뀌었어요. 다시 변환하거나 직접 다듬어 주세요."
+    S.notice = "원문이 바뀌었어요. 다시 변환해 주세요."
 
 
 def writer_changed():
@@ -262,9 +284,9 @@ def send_message():
             S.notice = "작성자와 받는 사람을 다시 확인해 주세요."
             return
         if S.draft_source is None or S.draft_source != S.original:
-            S.notice = "원문이 바뀌었어요. 먼저 다시 변환하거나 직접 작성해 주세요."
+            S.notice = "원문이 바뀌었어요. 먼저 다시 변환해 주세요."
             return
-        if not final or len(final) > MAX_CHARS or not S.reviewed:
+        if not final or len(final) > MAX_CHARS:
             S.notice = "빈 문장은 보낼 수 없어요. 500자 이내의 최종 문장을 확인해 주세요."
             return
         # 수정하면서 위협 표현을 추가하는 경우도 여기서 다시 검사합니다.
@@ -397,14 +419,14 @@ def main_screen():
         S.notice = ""
 
     # 선택 화면을 세션에 보관해 버튼을 눌러도 다른 화면으로 돌아가지 않습니다.
-    page = st.radio("화면 선택", ["마음 쓰기 ✍️", "가족 편지함 💌", "우리 가족 👨‍👩‍👧‍👦"],
+    page = st.radio("화면 선택", ["마음 쓰기 ✍️", "가족 편지함 💌", "우리 가족"],
                     key="current_page", horizontal=True, label_visibility="collapsed")
 
-    if page == "우리 가족 👨‍👩‍👧‍👦":
-        st.subheader("👨‍👩‍👧‍👦 우리 가족 소개")
+    if page == "우리 가족":
+        st.subheader("우리 가족")
         st.caption("우리 가족 여섯 명이에요. 마음 쓰기에서 보내는 가족과 받는 가족을 선택해 주세요.")
         for member in S.members:
-            st.markdown(f'<div class="family-card">{html.escape(member["emoji"])} {html.escape(member["name"])}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="family-card">{html.escape(member["name"])}</div>', unsafe_allow_html=True)
         with st.expander("🧹 전체 기록 초기화"):
             st.warning("보낸 편지, 반응, 작성 중인 원문을 모두 지워요. 가족 여섯 명은 그대로 유지돼요. 되돌릴 수 없어요.")
             st.checkbox("모든 편지와 작성 중인 내용을 삭제한다는 것을 확인했어요.", key="reset_confirm")
@@ -426,7 +448,7 @@ def main_screen():
                 S.recipient = ALL
 
             def member_label(mid):
-                return "🏡 가족 모두" if mid == ALL else member_map[mid]["emoji"] + " " + member_map[mid]["name"]
+                return "가족 모두" if mid == ALL else member_map[mid]["name"]
 
             left, right = st.columns(2)
             left.selectbox("보내는 가족", ids, format_func=member_label, key="author", on_change=writer_changed)
@@ -450,23 +472,6 @@ def main_screen():
                 if S.draft_note != UNSUPPORTED:
                     st.caption(S.draft_note)
 
-            # 자동 변환이 불가능할 때만 선택형 틀을 보여줍니다.
-            # 빈 칸은 생략하며, 전부 채울 필요가 없습니다.
-            if S.draft_status in ("unsupported", "manual"):
-                st.markdown("#### 🌷 내 말로 직접 다듬기 (선택 입력)")
-                st.caption("각 칸에 완성된 문장으로 적어 주세요. 적은 내용만 줄바꿈으로 이어 붙여요. "
-                           "내가 말하지 않은 감정·사과·약속은 앱이 만들지 않아요.")
-                st.text_area("어떤 상황인가요?", key="situation", max_chars=MAX_CHARS, height=90,
-                             on_change=manual_changed, placeholder="원한다면 상황을 내 말로 적어 주세요.")
-                st.text_area("어떤 마음인가요?", key="feeling", max_chars=MAX_CHARS, height=90,
-                             on_change=manual_changed, placeholder="말하고 싶은 마음이 있을 때만 적어 주세요.")
-                st.text_area("무엇을 부탁하고 싶나요?", key="request", max_chars=MAX_CHARS, height=90,
-                             on_change=manual_changed, placeholder="거절이나 경계도 분명하게 적어도 괜찮아요.")
-                combined = combine_manual(S.situation, S.feeling, S.request)
-                st.caption(f"직접 쓴 내용 합계 {len(combined)} / {MAX_CHARS}자 · 줄바꿈 포함")
-                st.button("내가 쓴 내용만 문장으로 모으기 🌷", on_click=make_manual,
-                          disabled=not combined or len(combined) > MAX_CHARS, use_container_width=True)
-
             # 미리 보기가 비어도 직접 수정 칸을 유지하여 지웠다가 다시 쓸 수 있습니다.
             if S.draft_status in ("converted", "kept", "manual") and S.draft_source is not None:
                 st.markdown('<div class="step">② 원문과 비교하고, 최종 문장을 고쳐 주세요</div>',unsafe_allow_html=True)
@@ -477,13 +482,13 @@ def main_screen():
                 current = S.draft_source == S.original
                 dangerous = is_danger(S.preview) or is_danger(S.original)
                 if not current:
-                    st.warning("원문이 바뀌었어요. 다시 변환하거나 직접 작성해 주세요.")
+                    st.warning("원문이 바뀌었어요. 다시 변환해 주세요.")
                 if dangerous:
                     st.error(SAFETY_NOTICE)
-                st.checkbox("원래 요청과 거절의 뜻이 맞는지 확인했고, 이 최종 문장만 보내고 싶어요.", key="reviewed")
+                st.caption("뜻이 맞는지 확인하고, 아래 보내기 버튼을 눌러 주세요.")
                 st.markdown('<div class="step">③ 확인한 문장만 보내요</div>',unsafe_allow_html=True)
                 st.button("이 마음 보내기 💌", key="send_final", on_click=send_message, use_container_width=True,
-                          disabled=S.processing or not current or dangerous or not S.preview.strip() or not S.reviewed)
+                          disabled=S.processing or not current or dangerous or not S.preview.strip())
             st.button("작성 중인 원문·미리 보기 지우기", on_click=clear_draft, use_container_width=True,
                       disabled=not bool(S.original or S.preview or S.situation or S.feeling or S.request))
             st.caption("전송 후 원문과 미리 보기는 초기화돼요. 아래 탭에서 ‘가족 편지함 💌’을 눌러 보여 주세요.")
@@ -497,15 +502,15 @@ def main_screen():
         else:
             member_map = {m["id"]: m for m in S.members}
             reaction_person = st.selectbox("반응할 가족 (본인 인증 아님)", list(member_map),
-                                           format_func=lambda mid:member_map[mid]["emoji"] + " " + member_map[mid]["name"],
+                                           format_func=lambda mid:member_map[mid]["name"],
                                            key="reaction_person")
             st.caption("같은 가족의 같은 반응은 한 번만 세어요. 선택한 반응을 다시 누르면 취소돼요. ✓는 선택된 반응이에요.")
             # 순서가 같은 시각에도 append 순서를 유지하는 안정 정렬입니다.
             for index, message in enumerate(sorted(S.messages, key=lambda m:m["sent_at"])):
                 mid = message["id"]
                 sent = datetime.fromisoformat(message["sent_at"]).astimezone(ZoneInfo("Asia/Seoul")).strftime("%Y.%m.%d %H:%M:%S")
-                meta = (f'{message["author_emoji"]} {message["author_name"]} → '
-                        f'{message["recipient_emoji"]} {message["recipient_name"]}\n{sent} · 한국 시간')
+                meta = (f'{message["author_name"]} → '
+                        f'{message["recipient_name"]}\n{sent} · 한국 시간')
                 # 사용자가 입력한 HTML 태그는 실행하지 않고 글자 그대로 보여줍니다.
                 st.markdown(f'<div class="bubble {"pink" if index % 2 else ""}">'
                             f'<div class="meta">{html.escape(meta).replace(chr(10), "<br>")}</div>'
@@ -524,58 +529,5 @@ def main_screen():
                     yes.button("네, 삭제할게요", key="delete_yes_"+mid, on_click=delete_message, args=(mid,), use_container_width=True)
                     no.button("취소", key="delete_no_"+mid, on_click=lambda:S.update(delete_id=None), use_container_width=True)
 
-    st.divider()
-    with st.expander("📚 수행평가 설명 · 어떻게 동작하나요?"):
-        st.markdown("""**1. AI가 아닌 표현 사전과 규칙**
-
-    입력 문장 전체가 등록된 상황과 맞는지 `re.fullmatch`로 확인해요.
-    구체적인 상황부터 검사하고, 일치하는 경우에만 미리 작성한 문장으로 바꿔요.
-    따라서 ‘청소하지 마’가 ‘청소해 줄래?’로 뒤집히거나, 긴 문장의 뒷부분이 사라지는 것을 피할 수 있어요.
-    원문에 없는 감정·사과·약속은 자동으로 추가하지 않아요.
-
-    이미 부드러운 문장은 일부 정해진 패턴을 확인해 유지하고,
-    모르는 문장은 성공한 척하지 않고 직접 작성 틀을 보여줘요.
-    직접 작성 틀은 빈 칸을 빼고 사용자가 적은 내용만 줄바꿈으로 조합해요.
-
-    **2. 안전과 한계**
-
-    위협·폭력과 관련된 단어·표현을 변환 전과 전송 전에 확인해요.
-    규칙은 빠뜨리거나 잘못 감지할 수 있으므로 모든 위험을 판별한다고 볼 수 없어요.
-    갈등을 판단하거나 화해를 강요하는 도구도 아니에요.
-
-    **3. 세션 저장**
-
-    `st.session_state.members`는 고정된 여섯 명의 가족 목록, `st.session_state.messages`는 최종 편지와 반응을 담아요.
-    원문은 작성용 임시 상태에만 있으며, 편지 기록에는 넣지 않아요.
-    전송하면 원문·미리 보기·직접 작성 틀을 비워요. 파일이나 DB에 저장하지 않아요.
-    반응은 가족 ID를 집합(set)으로 관리하므로 같은 가족의 같은 반응이 중복되지 않아요.
-
-    **4. 전송 제어**
-
-    버튼을 눌러야만 등록해요. 미리 보기의 원문 스냅샷과 현재 원문을 비교하고,
-    빈 문장·길이·위험 표현·최종 확인 여부를 다시 검사해요.
-    초안마다 고유 ID를 붙여 같은 초안의 중복 등록을 막고, 성공 후 입력칸을 비워요.
-    내용이 우연히 같은 서로 다른 편지는 별도 작성 후 보낼 수 있어요.
-
-    **5. 공동 기기와 개인정보**
-
-    아빠·엄마·오빠·언니 1·언니 2·주영은 미리 등록되어 있어요. 작성자와 반응할 가족 선택은 본인 인증이 아니에요. 받는 사람 선택도 비밀 전송 기능이 아니에요.
-    같은 기기를 보는 가족은 작성 중인 원문을 볼 수 있으며, 탭은 보안 경계가 아니에요.
-    최종 편지함에는 전송한 문장만 보이지만, 별도의 가족별 비밀 공간은 없어요.
-    외부 AI·로그인·DB·이미지·폰트 서비스를 연결하지 않아요.
-    단, Streamlit Community Cloud로 배포하면 앱과 세션 메모리는 그 서버에서 처리돼요.
-    앱 자체에서 원문이나 메시지를 로그에 출력하지 않아요.
-
-    **6. 실행과 배포**
-
-    GitHub 저장소에 `app.py`, `requirements.txt`를 올리고 Streamlit Community Cloud에서
-    저장소 선택 → Main file: `app.py` → Deploy를 누르면 돼요. Secrets는 비워 두세요.
-    Python 3.11 이상을 권장해요. 로컬 실행은 아래 두 줄이에요.
-    """)
-        st.code("pip install -r requirements.txt\nstreamlit run app.py", language="bash")
-        st.markdown("**등록된 표현 규칙**")
-        for label, _pattern, result in RULES:
-            st.write(f"• {label}: {result}")
-        st.caption(SESSION_NOTICE)
 
 main_screen()
