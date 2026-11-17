@@ -382,6 +382,18 @@ textarea,input{font-size:16px!important;color:#254B3C!important;background:#FFFD
 a{color:#35692D!important;}
 @media(max-width:480px){.block-container{padding:.6rem .8rem 2rem;}[data-testid="stHorizontalBlock"]{gap:.5rem;}.stButton>button{padding:.45rem .35rem;font-size:.92rem;}.hero{padding:.7rem .4rem;}}
 @media(min-width:600px){.block-container{margin-top:1rem;border:1px solid #DCE3CF;border-radius:32px;background:#F7F7EB;box-shadow:0 12px 45px #173D2710;}}
+
+/* 굵은 윤곽선과 시스템 굵은 글꼴로 만든 손그림 카드 스타일 */
+h1,h2,h3{font-weight:900!important;letter-spacing:-.045em;}
+label,[data-testid="stWidgetLabel"] p,.stButton>button p{font-weight:750!important;}
+.hero{border:3px solid #294D36;box-shadow:3px 4px 0 #294D36;}
+.stButton>button,.stFormSubmitButton>button{border:2px solid #294D36!important;box-shadow:2px 3px 0 #294D36;font-weight:800;}
+.stButton>button:active,.stFormSubmitButton>button:active{box-shadow:none;transform:translate(2px,2px);}
+[data-baseweb="select"]>div,[data-baseweb="textarea"],[data-baseweb="input"]{border:2px solid #476249!important;}
+.bubble,.bubble.pink{border:2px solid #294D36;box-shadow:3px 3px 0 #C4D3B4;}
+.message-text{font-weight:550;}.meta{font-weight:750;}
+[data-testid="stExpander"]{border:2px solid #476249;}
+
 *{animation:none!important;transition:none!important;}
 </style>
 """
@@ -506,7 +518,7 @@ def main_screen():
         viewer = st.selectbox("누구의 편지함을 볼까요?", list(member_map),
                               format_func=lambda mid:member_map[mid]["name"], key="mailbox_viewer")
         st.caption("현재 세션의 예전 편지도 남아요. 가족 선택은 잠금이나 본인 인증이 아니에요.")
-        visible = [m for m in S.messages if m["recipient_id"] in (ALL, viewer)]
+        visible = [m for m in S.messages if m["recipient_id"] in (ALL, viewer) or m["author_id"] == viewer]
         if not visible:
             st.info("아직 도착한 마음이 없어요. 첫 번째 편지를 보내볼까요? 🐣")
         else:
@@ -515,10 +527,11 @@ def main_screen():
             for index, message in enumerate(sorted(visible, key=lambda m:m["sent_at"])):
                 mid = message["id"]
                 sent = datetime.fromisoformat(message["sent_at"]).astimezone(ZoneInfo("Asia/Seoul")).strftime("%Y.%m.%d %H:%M:%S")
-                meta = (f'{message["author_name"]} → '
+                direction = "보낸 편지 ↗" if message["author_id"] == viewer else "받은 편지 ↙"
+                meta = (f'{direction} · {message["author_name"]} → '
                         f'{message["recipient_name"]}\n{sent} · 한국 시간')
                 # 사용자가 입력한 HTML 태그는 실행하지 않고 글자 그대로 보여줍니다.
-                st.markdown(f'<div class="bubble {"pink" if index % 2 else ""}">'
+                st.markdown(f'<div class="bubble {"pink" if message["author_id"] == viewer else ""}">'
                             f'<div class="meta">{html.escape(meta).replace(chr(10), "<br>")}</div>'
                             f'<div class="message-text">{html.escape(message["text"])}</div></div>',unsafe_allow_html=True)
                 columns = st.columns(3)
