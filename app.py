@@ -18,15 +18,14 @@ from urllib.parse import urlsplit
 
 st.set_page_config(page_title="우리 사이, 번역기 💌", page_icon="💌", layout="centered")
 MAX_CHARS = 500
-EMOJIS = ["🐱", "🐶", "🐰", "🐻", "🦊", "🐼", "🐸", "🐧", "🐣", "🍓", "🍑", "🍊", "🍎", "🥝", "🍇"]
 # 가족을 따로 등록하지 않고 아래 여섯 명을 항상 사용합니다.
 FIXED_FAMILY = [
-    {"id": "dad", "name": "아빠", "emoji": "🐻"},
-    {"id": "mom", "name": "엄마", "emoji": "🌷"},
-    {"id": "brother", "name": "오빠", "emoji": "🐶"},
-    {"id": "sister1", "name": "언니 1", "emoji": "🐰"},
-    {"id": "sister2", "name": "언니 2", "emoji": "🐱"},
-    {"id": "jooyoung", "name": "주영", "emoji": "🐣"},
+    {"id": "dad", "name": "아빠"},
+    {"id": "mom", "name": "엄마"},
+    {"id": "brother", "name": "오빠"},
+    {"id": "sister1", "name": "언니 1"},
+    {"id": "sister2", "name": "언니 2"},
+    {"id": "jooyoung", "name": "주영"},
 ]
 ALL = "__all__"
 REACTIONS = [("read", "👀 읽었어요"), ("understand", "💛 이해해요"), ("talk", "💬 이야기해요")]
@@ -368,9 +367,8 @@ def send_message():
         # 메시지 스키마에 원문 필드가 없습니다. 최종 텍스트와 최소 표시 정보만 저장합니다.
         S.messages.append({
             "id": token, "author_id": author["id"], "author_name": author["name"],
-            "author_emoji": author["emoji"], "recipient_id": S.recipient,
+            "recipient_id": S.recipient,
             "recipient_name": recipient["name"] if recipient else "가족 모두",
-            "recipient_emoji": recipient["emoji"] if recipient else "🏡",
             "text": final, "sent_at": datetime.now(ZoneInfo("Asia/Seoul")).isoformat(),
             "reactions": {kind: set() for kind, _ in REACTIONS},
         })
@@ -488,16 +486,28 @@ if not S.welcome_done:
               use_container_width=True, on_click=lambda:S.update(welcome_done=True))
     st.stop()
 
+# 설명창은 세션당 처음 한 번 표시하며 오른쪽 위 X로 닫을 수 있습니다.
+@st.dialog("처음이라면 잠깐 읽어 주세요", dismissible=True)
+def show_quick_guide():
+    st.markdown("**1.** 보내는 가족과 받는 가족을 골라요.\n\n"
+                "**2.** 마음을 적고 **다정하게 바꾸기**를 눌러요.\n\n"
+                "**3.** 바뀐 말을 확인·수정하고 **이 마음 보내기**를 눌러요.\n\n"
+                "**4.** 편지함에서 보낸 편지와 받은 편지를 확인해요.")
+    st.caption("변환할 때 원문이 BAZE 및 연결된 AI 서비스에 전달돼요. 뜻이 맞는지 확인해 주세요.")
+    st.caption("기록은 현재 세션에서만 유지돼요. 가족 선택은 잠금이 아니므로 다른 가족의 편지함도 열 수 있어요.")
+    if st.button("알겠어요 · 시작하기", type="primary", use_container_width=True):
+        st.rerun()
+
+if not S.get("guide_seen", False):
+    S.guide_seen = True
+    show_quick_guide()
+
 # fragment는 본문만 다시 실행합니다. 페이지 전체 재구성을 줄이고 선택 화면을 유지합니다.
 # 화면을 옮겨도 작성 위젯의 임시 상태가 정리되지 않도록 키를 유지합니다.
 @st.fragment
 def main_screen():
     for key in ("original", "preview", "author", "recipient", "reviewed", "situation", "feeling", "request"):
         S[key] = S[key]
-    with st.expander("사용 전 안내 · 기록과 개인정보"):
-        st.info(AI_NOTICE)
-        st.caption("🌱 " + SESSION_NOTICE)
-        st.warning(SHARED_NOTICE)
     if S.flash:
         st.success(S.flash)
         S.flash = ""
@@ -518,7 +528,6 @@ def main_screen():
     page = S.current_page
 
     if page == "마음 쓰기 ✍️":
-        st.caption(AI_NOTICE)
         if not S.members:
             st.info("가족 목록을 불러오지 못했어요. 전체 기록 초기화를 사용해 주세요.")
         else:
@@ -539,12 +548,14 @@ def main_screen():
                          on_change=source_changed, placeholder="예: TV 소리 좀 줄여.")
             st.caption(f"원문 {len(S.original)} / {MAX_CHARS}자")
             st.button("다정하게 바꾸기 🪄", on_click=convert,
-                      disabled=not S.original.strip() or S.processing, use_container_width=True)
+                      disabled=S.processing, use_container_width=True)
 
             if S.draft_status == "danger":
                 st.error(SAFETY_NOTICE)
             elif S.draft_status in ("converted", "kept", "manual"):
                 st.info(S.draft_note)
+            elif S.draft_status == "error":
+                st.error(S.draft_note)
             elif S.draft_status == "empty":
                 st.warning(S.draft_note)
             elif S.draft_status == "unsupported":
